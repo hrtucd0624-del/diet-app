@@ -23,7 +23,7 @@ const COACH_PROMPT: string = "## 1. あなたの役割\n\nあなたは、{{nickn
 
 const HISTORY_MESSAGES = 40; // 20往復
 const DAILY_AI_LIMIT = 120; // 無料枠を守るための1日の上限（チャット・写真分析・提案の合計）
-const MAX_TODOS = 3;
+const SUGGEST_TODOS = 3; // 1回の提案で増やす数（今日やることの数に上限はない）
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -433,14 +433,17 @@ async function analyzeMeal(sb: SupabaseClient, body: Req) {
 
 async function suggestTodos(sb: SupabaseClient, profile: Record<string, unknown>, body: Req) {
   const { data: existing } = await sb.from("todos").select("text").eq("date", body.today);
-  const room = MAX_TODOS - (existing?.length ?? 0);
+  const already = (existing ?? []).map((t: { text: string }) => t.text);
 
   const values = await buildContext(sb, profile, body);
   const instruction = [
-    `今日やることを${Math.max(room, 0)}つ提案してください（1つ30文字以内、具体的で今日中にできること）。`,
+    `今日やることを${SUGGEST_TODOS}つ提案してください（1つ30文字以内、具体的で今日中にできること）。`,
+    already.length ? `すでに決めていること（これと同じものは出さない）：${already.join("、")}` : "",
     "体調がよくない日は「休む」「温かいものを飲む」など休養のことだけにする。",
     "あわせて、ホームに出す今日の一言（60文字以内）を書いてください。",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
   const text = await gemini(
     systemPrompt(profile, values),
     [{ role: "user", parts: [{ text: instruction }] }],
@@ -459,8 +462,8 @@ async function suggestTodos(sb: SupabaseClient, profile: Record<string, unknown>
   const parsed = JSON.parse(text) as { comment: string; todos: string[] };
   const todos = (parsed.todos ?? [])
     .map((t) => String(t).trim().slice(0, 60))
-    .filter(Boolean)
-    .slice(0, Math.max(room, 0));
+    .filter((t) => t && !already.includes(t))
+    .slice(0, SUGGEST_TODOS);
   if (todos.length) {
     await sb.from("todos").insert(todos.map((t) => ({ date: body.today, text: t, source: "coach" })));
   }

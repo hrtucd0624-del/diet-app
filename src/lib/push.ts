@@ -64,3 +64,22 @@ export async function sendTestPush(): Promise<boolean> {
   const { data, error } = await createClient().functions.invoke("send-push", { body: { test: true } });
   return !error && (data?.sent ?? 0) > 0;
 }
+
+export type PushStatus = {
+  timezone: string | null;
+  local_date: string | null;
+  local_time: string | null;
+  morning: string | null;
+  evening: string | null;
+  work_end: boolean | null;
+  devices: number;
+  devices_ok: number;
+  cron_last_run: string | null;
+  cron_last_result: { users: number; sent: number } | null;
+  recent: { kind: string; ref: string; created_at: string }[];
+};
+
+export async function getPushStatus(): Promise<PushStatus | null> {
+  const { data, error } = await createClient().functions.invoke("send-push", { body: { status: true } });
+  return error ? null : (data as PushStatus);
+}

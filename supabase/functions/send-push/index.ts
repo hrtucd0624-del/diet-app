@@ -58,13 +58,18 @@ Deno.serve(async (req) => {
     return json({ error: "vapid", message }, 500);
   }
 
-  // 1) 設定画面の「テスト通知」：ログイン中の本人に1通だけ送る
+  // 1) 設定画面から（ログイン中の本人）：テスト通知、または通知の状態確認
   const auth = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   const cronSecret = req.headers.get("x-cron-secret");
   if (!cronSecret) {
     if (!auth) return json({ error: "auth" }, 401);
     const { data: u } = await admin.auth.getUser(auth);
     if (!u.user) return json({ error: "auth" }, 401);
+    let body: { status?: boolean } = {};
+    try {
+      body = await req.json();
+    } catch {}
+    if (body.status) return json(await statusFor(admin, u.user.id));
     const sent = await sendToUser(admin, u.user.id, {
       title: "なすびコーチ",
       body: "通知のテストだよ。ちゃんと届いてる！",
@@ -80,7 +85,10 @@ Deno.serve(async (req) => {
 
   const { data: subs } = await admin.from("push_subscriptions").select("user_id");
   const userIds = [...new Set((subs ?? []).map((s: { user_id: string }) => s.user_id))];
-  if (!userIds.length) return json({ users: 0, sent: 0 });
+  if (!userIds.length) {
+    await admin.from("push_status").upsert({ id: 1, last_run_at: new Date().toISOString(), last_result: { users: 0, sent: 0 } });
+    return json({ users: 0, sent: 0 });
+  }
 
   const { data: profiles } = await admin.from("profiles").select("*").in("id", userIds).eq("role", "owner");
   let sent = 0;
@@ -95,8 +103,36 @@ Deno.serve(async (req) => {
       sent += await sendToUser(admin, p.id, due.message);
     }
   }
+  await admin
+    .from("push_status")
+    .upsert({ id: 1, last_run_at: new Date().toISOString(), last_result: { users: userIds.length, sent } });
   return json({ users: userIds.length, sent });
 });
+
+// 設定画面の「通知の状態を確認」用
+async function statusFor(admin: SupabaseClient, userId: string) {
+  const [{ data: p }, { data: subs }, { data: st }, { data: logs }] = await Promise.all([
+    admin.from("profiles").select("*").eq("id", userId).single(),
+    admin.from("push_subscriptions").select("endpoint").eq("user_id", userId),
+    admin.from("push_status").select("*").eq("id", 1).maybeSingle(),
+    admin.from("push_log").select("kind, ref, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(5),
+  ]);
+  const prof = p as Profile | null;
+  const local = prof ? localNow(prof.timezone) : null;
+  return {
+    timezone: prof?.timezone ?? null,
+    local_date: local?.date ?? null,
+    local_time: local ? `${String(Math.floor(local.minutes / 60)).padStart(2, "0")}:${String(local.minutes % 60).padStart(2, "0")}` : null,
+    morning: prof?.notify_morning?.slice(0, 5) ?? null,
+    evening: prof?.notify_evening?.slice(0, 5) ?? null,
+    work_end: prof?.notify_work_end ?? null,
+    devices: (subs ?? []).length,
+    devices_ok: (subs ?? []).filter((s: { endpoint: string }) => isPushEndpoint(s.endpoint)).length,
+    cron_last_run: st?.last_run_at ?? null,
+    cron_last_result: st?.last_result ?? null,
+    recent: logs ?? [],
+  };
+}
 
 // 端末のタイムゾーンでの「今日の日付」と「今の分（0時からの分）」
 function localNow(tz: string): { date: string; minutes: number } {

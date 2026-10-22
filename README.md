@@ -140,6 +140,9 @@ http://localhost:3000 を開く。
 5. **Integrations（または Database → Extensions）** で **pg_cron** と **pg_net** をオンにしてから、
    **SQL Editor** で [`supabase/migrations/0004_push_cron.sql`](supabase/migrations/0004_push_cron.sql) を実行
 6. GitHub Desktop で **Push origin**
+7. **SQL Editor** で [`supabase/migrations/0006_push_status.sql`](supabase/migrations/0006_push_status.sql) を実行（通知の状態確認用）
+
+> 通知が来ない時は、アプリの **設定 → 通知 →「通知の状態を確認」** で、どこで止まっているかが分かる。
 
 ---
 

@@ -3,7 +3,16 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "./ProfileProvider";
-import { currentSubscription, deviceTimeZone, disablePush, enablePush, pushSupported, sendTestPush } from "@/lib/push";
+import {
+  currentSubscription,
+  deviceTimeZone,
+  disablePush,
+  enablePush,
+  getPushStatus,
+  pushSupported,
+  sendTestPush,
+  type PushStatus,
+} from "@/lib/push";
 import { isIOS, isStandalone } from "@/lib/pwa";
 
 const DENIED = "通知が許可されていません。iPhone の「設定」→「通知」→「なすびコーチ」でオンにしてね。";
@@ -121,9 +130,87 @@ export function NotificationSettings() {
         <button className="btn-soft w-full">時刻を保存</button>
         {saved && <p className="text-center text-sm text-leaf-600">{saved}</p>}
         <p className="text-xs text-nasu-500">
-          iPhone の通知は届かないこともあります。アプリを開いた時は、同じ内容をホームの 🔔 に出します。
+          設定した時刻から2時間以内に、5分おきの確認で1回だけ届きます。iPhone の通知は届かないこともあるので、アプリを開いた時は同じ内容をホームの 🔔 に出します。
         </p>
       </form>
+      <PushStatusCheck />
     </section>
+  );
+}
+
+const KIND_JA: Record<string, string> = { morning: "朝", evening: "夜", work_end: "バイト終わり" };
+
+function minutesAgo(iso: string) {
+  return Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+}
+
+// 通知が来ない時に、どこで止まっているかを見る
+function PushStatusCheck() {
+  const [status, setStatus] = useState<PushStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function check() {
+    setBusy(true);
+    setFailed(false);
+    const s = await getPushStatus();
+    setBusy(false);
+    if (!s) return setFailed(true);
+    setStatus(s);
+  }
+
+  const problems: string[] = [];
+  if (status) {
+    if (status.devices === 0) problems.push("この端末が通知に登録されていません。上の「通知をオンにする」を押してね。");
+    else if (status.devices_ok === 0) problems.push("登録されている端末が正しくありません。通知をオフ→オンにしてね。");
+    if (!status.cron_last_run) problems.push("5分ごとの確認（時計）がまだ一度も動いていません。Supabase 側の設定を見直す必要があります。");
+    else if (minutesAgo(status.cron_last_run) > 15)
+      problems.push(`5分ごとの確認が ${minutesAgo(status.cron_last_run)} 分止まっています。Supabase 側の設定を見直す必要があります。`);
+    if (status.timezone && status.timezone !== deviceTimeZone())
+      problems.push(`時刻の基準（${status.timezone}）がこの端末（${deviceTimeZone()}）と違います。下の「時刻を保存」を押すと直ります。`);
+  }
+
+  return (
+    <div className="space-y-2 border-t border-nasu-50 pt-3">
+      <button type="button" className="btn-soft w-full" onClick={check} disabled={busy}>
+        {busy ? "確認しています…" : "通知の状態を確認"}
+      </button>
+      {failed && <p className="rounded-xl bg-sun-100 p-2 text-sm">確認できませんでした。電波を確認してもう一度ためしてね。</p>}
+      {status && (
+        <div className="space-y-2 rounded-xl bg-nasu-50 p-3 text-sm">
+          {problems.length ? (
+            <ul className="list-disc space-y-1 pl-5 text-nasu-700">
+              {problems.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-leaf-600">設定はちゃんとできています。</p>
+          )}
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-nasu-600">
+            <dt>いまの時刻</dt>
+            <dd>
+              {status.local_time}（{status.timezone}）
+            </dd>
+            <dt>朝・夜</dt>
+            <dd>
+              {status.morning} ／ {status.evening}
+            </dd>
+            <dt>登録した端末</dt>
+            <dd>{status.devices} 台</dd>
+            <dt>最後の確認</dt>
+            <dd>{status.cron_last_run ? `${minutesAgo(status.cron_last_run)} 分前` : "まだ"}</dd>
+            <dt>最近送った</dt>
+            <dd>
+              {status.recent.length
+                ? status.recent
+                    .map((r) => `${KIND_JA[r.kind] ?? r.kind}（${new Date(r.created_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）`)
+                    .join("、")
+                : "まだ"}
+            </dd>
+          </dl>
+        </div>
+      )}
+    </div>
   );
 }
