@@ -93,6 +93,7 @@ http://localhost:3000 を開く。
 3. Supabase の **Edge Functions → Secrets** に2つ追加
    - `GEMINI_API_KEY` = さっきのキー
    - `GEMINI_MODEL` = `gemini-3.8-flash`（無料枠で使えるモデル。使えなくなったらここだけ変える）
+   - `GEMINI_FALLBACK_MODEL` = `gemini-3.5-flash-lite`（混んでいる時の予備。無料枠はモデルごとに別）
 4. **Edge Functions →「Deploy a new function」→「Via Editor」**
    - 名前：`coach`
    - 中身：[`supabase/functions/coach/index.ts`](supabase/functions/coach/index.ts) を全部貼る（Claude Code に「コピーして」と頼めばクリップボードに入れてくれる）

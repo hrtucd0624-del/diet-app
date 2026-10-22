@@ -5,6 +5,9 @@
 // 必要な Secrets（Edge Functions → Secrets）：
 //   GEMINI_API_KEY … Google AI Studio で作ったキー
 //   GEMINI_MODEL   … 例 gemini-3.8-flash（無料枠の対象モデルは変わるので、ここで切り替える）
+// あると便利な Secrets：
+//   GEMINI_FALLBACK_MODEL … 混んでいる時に使う予備のモデル（例 gemini-3.5-flash-lite。無料枠はモデルごと）
+//   GEMINI_THINKING       … 考える量 low / medium / high（初期値 low。"off" で指定しない）
 //
 // action:
 //   reply          … 直近のチャットに返事をして chat_messages に保存
@@ -31,6 +34,7 @@ function json(body: unknown, status = 200) {
 }
 
 const BUSY_MESSAGE = "今AIが混んでいるので、数分後にもう一度送ってね。記録はちゃんと保存されてるよ";
+const DAILY_MESSAGE = "今日のAIの無料枠を使い切ったみたい。続きはまた明日ね。記録はちゃんと保存されてるよ";
 const FAILED_MESSAGE = "うまく返事ができませんでした。少し時間をおいてもう一度送ってね。記録はちゃんと保存されてるよ";
 
 type Req = {
@@ -75,6 +79,7 @@ Deno.serve(async (req) => {
     return json({ error: "bad_request" }, 400);
   } catch (e) {
     if (e instanceof GeminiBusy) return json({ error: "busy", message: BUSY_MESSAGE }, 429);
+    if (e instanceof GeminiDailyLimit) return json({ error: "daily", message: DAILY_MESSAGE }, 429);
     console.error(e);
     return json({ error: "failed", message: FAILED_MESSAGE }, 500);
   }
@@ -87,40 +92,87 @@ class GeminiBusy extends Error {}
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 type Content = { role: "user" | "model"; parts: Part[] };
 
+class GeminiDailyLimit extends Error {}
+
+const MAX_RETRY_WAIT_MS = 5000; // これより長く待てと言われたら、待たずに次へ
+const REQUEST_TIMEOUT_MS = 45000;
+
+// 429 の本文から「何秒後に再試行」と「1日の上限か」を読む
+function readRateLimit(body: string): { retryMs: number; daily: boolean } {
+  const m = body.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+  const daily = /PerDay|per day|RequestsPerDay/i.test(body);
+  return { retryMs: m ? Number(m[1]) * 1000 : 3000, daily };
+}
+
+async function callModel(
+  key: string,
+  model: string,
+  system: string,
+  contents: Content[],
+  generationConfig: Record<string, unknown> | undefined,
+): Promise<{ ok: true; text: string } | { ok: false; status: number; body: string }> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  // 考える量を少なめにして返事を速くする（GEMINI_THINKING で変更可。"off" で送らない）
+  const thinking = Deno.env.get("GEMINI_THINKING") ?? "low";
+  const config = {
+    ...(generationConfig ?? {}),
+    ...(thinking !== "off" ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
+  };
+  const send = (cfg: Record<string, unknown>) =>
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: system }] },
+        contents,
+        ...(Object.keys(cfg).length ? { generationConfig: cfg } : {}),
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+  let res = await send(config);
+  // thinkingLevel に対応していないモデルなら、外してもう一度
+  if (res.status === 400 && thinking !== "off") {
+    const body = await res.text();
+    if (!/thinking/i.test(body)) return { ok: false, status: 400, body };
+    res = await send(generationConfig ?? {});
+  }
+  if (!res.ok) return { ok: false, status: res.status, body: await res.text() };
+
+  const data = await res.json();
+  const text = (data.candidates?.[0]?.content?.parts ?? [])
+    .map((p: { text?: string; thought?: boolean }) => (p.thought ? "" : p.text ?? ""))
+    .join("")
+    .trim();
+  if (!text) throw new Error(`Gemini empty: ${JSON.stringify(data).slice(0, 500)}`);
+  return { ok: true, text };
+}
+
 async function gemini(system: string, contents: Content[], generationConfig?: Record<string, unknown>) {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("GEMINI_API_KEY is not set");
-  const model = Deno.env.get("GEMINI_MODEL") || "gemini-flash-latest";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  const payload = JSON.stringify({
-    system_instruction: { parts: [{ text: system }] },
-    contents,
-    ...(generationConfig ? { generationConfig } : {}),
-  });
+  const primary = Deno.env.get("GEMINI_MODEL") || "gemini-flash-latest";
+  const fallback = Deno.env.get("GEMINI_FALLBACK_MODEL");
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: payload,
-    });
-    if (res.status === 429 || res.status === 503) {
-      // 回数制限：少し待って1回だけ再試行
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, 3000));
+  let allDaily = true;
+  for (const model of fallback && fallback !== primary ? [primary, fallback] : [primary]) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await callModel(key, model, system, contents, generationConfig);
+      if (r.ok) return r.text;
+      if (r.status !== 429 && r.status !== 503) throw new Error(`Gemini ${model} ${r.status}: ${r.body.slice(0, 1000)}`);
+
+      const { retryMs, daily } = r.status === 429 ? readRateLimit(r.body) : { retryMs: 3000, daily: false };
+      console.error(`Gemini ${model} ${r.status} (daily=${daily}, retry=${retryMs}ms): ${r.body.slice(0, 600)}`);
+      if (!daily) allDaily = false;
+      // 1日の上限、または長く待つ必要がある時は、待たずに予備のモデルへ
+      if (attempt === 0 && !daily && retryMs <= MAX_RETRY_WAIT_MS) {
+        await new Promise((res) => setTimeout(res, retryMs));
         continue;
       }
-      throw new GeminiBusy();
+      break;
     }
-    if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
-    const data = await res.json();
-    const text = (data.candidates?.[0]?.content?.parts ?? [])
-      .map((p: { text?: string; thought?: boolean }) => (p.thought ? "" : p.text ?? ""))
-      .join("")
-      .trim();
-    if (!text) throw new Error(`Gemini empty: ${JSON.stringify(data).slice(0, 500)}`);
-    return text;
   }
+  if (allDaily) throw new GeminiDailyLimit();
   throw new GeminiBusy();
 }
 
