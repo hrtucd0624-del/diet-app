@@ -1,36 +1,101 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# なすびコーチ
 
-## Getting Started
+自分で決めたことを毎日続けるための、記録＋AIコーチのアプリ（PWA）。
+設計は [docs/design.md](docs/design.md)。すべて無料枠で動かします。
 
-First, run the development server:
+## いまの状態：フェーズ1（AIなし）
+
+- ログイン（メールに届くコードを入力。パスワードなし）
+- 初回設定（ニックネーム・身長・目標体重〈46kg以上〉・体質メモ・周期・ホーム画面追加の案内）
+- ホーム（今日のひとこと・今日やること3つ・連続日数・周期の時期・体調が悪い日は「休む日」）
+- 記録（体重・食事〈写真は端末で縮小＆位置情報削除〉・運動・体調・生理）
+- グラフ（7日平均の線が主役・毎日の点は薄く・記録できた日・相談できた回数）
+- 設定（プロフィール・書き出し・記録の削除・ログアウト）
+- RLS（本人のデータは本人だけが読める）
+
+> 設計書ではログインは「マジックリンク」ですが、iPhone のホーム画面アプリは Safari と
+> ログイン状態が別になり、メールのリンクを押すと Safari 側でログインしてしまいます。
+> そのため **メールに届く数字のコードを入力する方式** にしました（リンクも Safari では使えます）。
+
+---
+
+## セットアップ（はじめの1回だけ）
+
+### 1. Supabase（DB・ログイン・写真）
+
+1. https://supabase.com で無料アカウントを作る（GitHub ログインが楽）
+2. 「New project」→ 名前は `nasubi-coach`、リージョンは近い場所（Tokyo / Singapore）、DB パスワードは自動生成でOK（パスワード管理アプリに保存）
+3. 左メニュー **SQL Editor** → 「New query」→ [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) の中身を全部貼って **Run**
+   - 「Success. No rows returned」と出ればOK
+4. 左メニュー **Authentication → Emails（Email Templates）→ Magic Link** の本文を下に置き換えて保存
+   （コードが入っていないと、アプリに入力するコードがメールに出ません）
+
+   ```html
+   <h2>なすびコーチ ログインコード</h2>
+   <p>アプリにこのコードを入力してください：</p>
+   <p style="font-size:28px;letter-spacing:6px"><b>{{ .Token }}</b></p>
+   <p>Safari で開いている場合は、こちらのリンクでもログインできます：<br>
+   <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email">ログインする</a></p>
+   ```
+5. **Project Settings → API**（または「Connect」ボタン）で次の2つをメモ
+   - Project URL
+   - `anon` `public` キー（**公開してよいキー**。`service_role` キーは絶対に使わない・貼らない）
+
+> 無料枠の Supabase 標準メールは **1時間に数通まで** しか送れません。
+> ログインし直す時、コードが来なければ少し待ってからもう一度ためしてください。
+
+### 2. パソコンで動かしてみる（任意）
+
+```bash
+cp .env.example .env.local
+```
+
+`.env.local` を開いて、さっきの Project URL と anon キーに書き換えてから：
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 を開く。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Vercel で公開（iPhone で使うため）
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. https://github.com で無料アカウントを作り、新しい **Private** リポジトリを作る
+2. このフォルダを push する（Claude Code に「GitHub に push して」と頼めばOK）
+3. https://vercel.com に GitHub でログイン →「Add New → Project」→ そのリポジトリを Import
+4. **Environment Variables** に2つ追加して Deploy
+   - `NEXT_PUBLIC_SUPABASE_URL` = Project URL
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = anon キー
+5. できた URL（例 `https://nasubi-coach.vercel.app`）を Supabase の
+   **Authentication → URL Configuration → Site URL** に入れて保存
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## iPhone の Safari での動作確認（フェーズ1）
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. iPhone の Safari で Vercel の URL を開く
+2. メールアドレスを入れて「ログイン用のコードを送る」→ メールのコードを入力
+3. 初回設定を進める
+   - 目標体重に `45` を入れると「つぎへ」が押せないこと
+4. ホームで「今日やること」を3つ追加 → 4つ目の入力欄が消えること、チェックできること
+5. **記録** タブ
+   - 体重を入れる → 「記録したよ」が出る。同じ日にもう一度入れると上書き
+   - 食事：写真を撮る/選ぶ → プレビュー → 記録 → 下の一覧にサムネイルが出る
+   - 運動・体調・生理も1つずつ記録
+   - 体調で「だるさ：よくない」か熱 37.5℃以上 → ホームの「今日やること」が **「今日は休む日」** になる
+6. **グラフ**：体重を数日分（日付を変えて）入れると、濃い線（7日平均）と薄い点が出る
+7. **ホーム画面に追加**：共有ボタン →「ホーム画面に追加」→ なすびアイコンから開く
+   - 上にアドレスバーが出ず、アプリのように開くこと
+   - Safari とは別あつかいなので、もう一度コードでログインする
+8. **設定**：ニックネームを変えるとホームの呼び方が変わる。「記録を書き出す」で JSON が保存できる
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+うまくいかない時は、画面のスクリーンショットと、どの手順だったかを Claude Code に伝えてください。
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 次のフェーズ
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **フェーズ2：AIコーチ**（`coach-system-prompt.md` が必要）
+  同意画面 → 送信前チェック → `coach-reply` → チャット → 写真の切り抜き＆`analyze-meal` → やることの自動提案
+- フェーズ3：連続記録・お休み券・ご褒美・予定・カウントダウン・通知
+- フェーズ4：パートナー

@@ -1,26 +1,57 @@
 @import "tailwindcss";
 
+/* なすび色を基調にしたやさしい配色。赤い警告色は使わない */
+@theme {
+  --color-nasu-50: #f7f3fa;
+  --color-nasu-100: #eee5f4;
+  --color-nasu-200: #dccbe8;
+  --color-nasu-300: #c2a6d6;
+  --color-nasu-400: #a07cbd;
+  --color-nasu-500: #7f5a9f;
+  --color-nasu-600: #684584;
+  --color-nasu-700: #52366a;
+  --color-leaf-100: #e6f2e8;
+  --color-leaf-400: #79b089;
+  --color-leaf-600: #4b8a5c;
+  --color-sun-100: #fdf3dc;
+  --color-sun-500: #d9a33a;
+  --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #fbf9fc;
+  --foreground: #2e2635;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iPhone のホームバー分の余白 */
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility card {
+  @apply rounded-2xl bg-white p-4 shadow-sm ring-1 ring-nasu-100;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-3 font-semibold transition active:scale-[0.98] disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-nasu-500 text-white;
+}
+@utility btn-soft {
+  @apply btn bg-nasu-100 text-nasu-700;
+}
+@utility input {
+  @apply w-full rounded-xl border border-nasu-200 bg-white px-3 py-3 text-base outline-none focus:border-nasu-400;
+}
+@utility label {
+  @apply mb-1 block text-sm font-medium text-nasu-700;
 }
