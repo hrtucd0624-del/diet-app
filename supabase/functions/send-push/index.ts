@@ -44,11 +44,19 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method" }, 405);
 
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  webpush.setVapidDetails(
-    Deno.env.get("VAPID_SUBJECT") ?? "https://example.com",
-    Deno.env.get("VAPID_PUBLIC_KEY")!,
-    Deno.env.get("VAPID_PRIVATE_KEY")!,
-  );
+  try {
+    // 貼り付けた時の空白・改行は取りのぞく
+    webpush.setVapidDetails(
+      (Deno.env.get("VAPID_SUBJECT") ?? "").trim(),
+      (Deno.env.get("VAPID_PUBLIC_KEY") ?? "").trim(),
+      (Deno.env.get("VAPID_PRIVATE_KEY") ?? "").trim(),
+    );
+  } catch (e) {
+    // 鍵の値そのものは出さず、どこがおかしいかだけ返す
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("VAPID setup failed:", message);
+    return json({ error: "vapid", message }, 500);
+  }
 
   // 1) 設定画面の「テスト通知」：ログイン中の本人に1通だけ送る
   const auth = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
