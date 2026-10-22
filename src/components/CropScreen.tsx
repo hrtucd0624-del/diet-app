@@ -81,7 +81,7 @@ export function CropScreen({
         <p className="font-bold">料理の部分だけを囲んでね</p>
         <p className="text-xs text-nasu-100">人・顔・名前・レシートなどが入らないように。枠は動かせて、右下の丸で大きさを変えられます。</p>
       </div>
-      <div ref={wrapRef} className="relative mx-4 flex flex-1 items-center justify-center overflow-hidden">
+      <div ref={wrapRef} className="relative mx-4 flex min-h-0 flex-1 items-center justify-center overflow-hidden">
         <div className="relative" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
           <canvas ref={canvasRef} className="block" />
           {/* 枠の外を暗くする */}

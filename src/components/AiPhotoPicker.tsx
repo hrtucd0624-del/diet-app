@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { CropScreen } from "./CropScreen";
 import { loadBitmap, renderJpeg, type Rect } from "@/lib/image";
 import { checkPhoto, preloadPhotoGuard } from "@/lib/guard/photo";
@@ -62,21 +63,27 @@ export function AiPhotoPicker({
         <input type="file" accept="image/*" className="hidden" onChange={pick} />
       </label>
       {error && <p className="mt-2 rounded-xl bg-sun-100 p-3 text-sm">{error}</p>}
-      {bitmap && !checking && (
-        <CropScreen
-          bitmap={bitmap}
-          onCancel={() => {
-            bitmap.close();
-            setBitmap(null);
-          }}
-          onDone={done}
-        />
-      )}
-      {checking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-nasu-700/90 text-white">
-          <p>写真をチェックしています…（端末の中だけで調べています）</p>
-        </div>
-      )}
+      {/* 画面いちばん外側に出す（下に貼りつく入力欄やメニューに隠れないように） */}
+      {bitmap &&
+        !checking &&
+        createPortal(
+          <CropScreen
+            bitmap={bitmap}
+            onCancel={() => {
+              bitmap.close();
+              setBitmap(null);
+            }}
+            onDone={done}
+          />,
+          document.body,
+        )}
+      {checking &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-nasu-700/90 p-6 text-center text-white">
+            <p>写真をチェックしています…（端末の中だけで調べています）</p>
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
