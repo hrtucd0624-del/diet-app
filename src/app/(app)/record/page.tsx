@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileProvider";
+import { DateInput } from "@/components/DateInput";
 import { formatMD, today } from "@/lib/date";
 import { shrinkImage } from "@/lib/image";
 import type { Condition, Level } from "@/lib/types";
@@ -114,12 +115,18 @@ function WeightForm({ onSaved }: FormProps) {
     load();
   }
 
+  async function remove(r: WeightRow) {
+    if (!confirm(`${formatMD(r.date)} の体重を消しますか？`)) return;
+    await supabase.from("weights").delete().eq("id", r.id);
+    load();
+  }
+
   return (
     <div className="space-y-4">
       <form onSubmit={save} className="card space-y-3">
         <div>
           <label className="label">日付</label>
-          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required />
+          <DateInput value={date} onChange={setDate} />
         </div>
         <div>
           <label className="label">体重（kg）</label>
@@ -158,12 +165,15 @@ function WeightForm({ onSaved }: FormProps) {
           <h2 className="mb-2 text-sm font-semibold text-nasu-600">最近の記録</h2>
           <ul className="divide-y divide-nasu-50 text-sm">
             {rows.map((r) => (
-              <li key={r.id} className="flex justify-between py-2">
-                <span className="text-nasu-500">{formatMD(r.date)}</span>
+              <li key={r.id} className="flex items-center gap-2 py-2">
+                <span className="flex-1 text-nasu-500">{formatMD(r.date)}</span>
                 <span>
                   {Number(r.weight_kg).toFixed(1)} kg
                   {r.body_fat_pct != null && <span className="ml-2 text-nasu-400">{r.body_fat_pct}%</span>}
                 </span>
+                <button aria-label="削除" className="px-2 text-nasu-300" onClick={() => remove(r)}>
+                  ✕
+                </button>
               </li>
             ))}
           </ul>
@@ -271,7 +281,7 @@ function MealForm({ onSaved }: FormProps) {
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="label">日付</label>
-            <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required />
+            <DateInput value={date} onChange={setDate} />
           </div>
           <div>
             <label className="label">時刻</label>
@@ -397,7 +407,7 @@ function ExerciseForm({ onSaved }: FormProps) {
       <form onSubmit={save} className="card space-y-3">
         <div>
           <label className="label">日付</label>
-          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required />
+          <DateInput value={date} onChange={setDate} />
         </div>
         <div>
           <label className="label">種類</label>
@@ -520,7 +530,7 @@ function ConditionForm({ onSaved }: FormProps) {
     <form onSubmit={save} className="card space-y-4">
       <div>
         <label className="label">日付</label>
-        <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <DateInput value={date} onChange={setDate} />
       </div>
       <div>
         <label className="label">熱（℃・測った時だけ）</label>
@@ -603,7 +613,7 @@ function CycleForm({ onSaved }: FormProps) {
       <div className="card space-y-3">
         <div>
           <label className="label">日付</label>
-          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+          <DateInput value={date} onChange={setDate} />
         </div>
         {open ? (
           <>

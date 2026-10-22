@@ -7,6 +7,7 @@ import { useProfile } from "@/components/ProfileProvider";
 import { AddToHomeGuide } from "@/components/AddToHomeGuide";
 import { TargetWeightInput, isValidTarget, numOrNull } from "@/components/ProfileFields";
 import { isStandalone } from "@/lib/pwa";
+import { today } from "@/lib/date";
 
 // フェーズ1の初回設定。同意画面はフェーズ2、通知の許可はフェーズ3で追加する
 const STEPS = ["welcome", "nickname", "body", "notes", "cycle", "home"] as const;
@@ -131,7 +132,7 @@ export default function OnboardingPage() {
             </p>
             <div>
               <label className="label" htmlFor="last">前回の生理が始まった日</label>
-              <input id="last" type="date" className="input" value={lastStart} onChange={(e) => setLastStart(e.target.value)} />
+              <input id="last" type="date" max={today()} className="input" value={lastStart} onChange={(e) => setLastStart(e.target.value)} />
             </div>
             <div>
               <label className="label" htmlFor="len">だいたいの周期（日）</label>
