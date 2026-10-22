@@ -192,6 +192,12 @@ function addDays(iso: string, n: number) {
   return d.toISOString().slice(0, 10);
 }
 
+// 週は月曜はじまり
+function mondayOf(iso: string) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return addDays(iso, -((d.getUTCDay() + 6) % 7));
+}
+
 function localHM(ts: string, offset: number) {
   const d = new Date(Date.parse(ts) + offset * 60000);
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
@@ -244,7 +250,7 @@ async function buildContext(sb: SupabaseClient, profile: Record<string, unknown>
     sb.from("events").select("date, title").gte("date", today).order("date").limit(1).maybeSingle(),
     sb.rpc("record_streak", { p_today: today }),
     sb.rpc("cycle_phase", { p_today: today }),
-    sb.from("rewards").select("*").lte("week_start", today).gt("week_start", addDays(today, -7)).maybeSingle(),
+    sb.from("rewards").select("*").eq("week_start", mondayOf(today)).maybeSingle(),
   ]);
 
   const w = (weights.data ?? []) as { date: string; weight_kg: number }[];
@@ -267,14 +273,10 @@ async function buildContext(sb: SupabaseClient, profile: Record<string, unknown>
   let rewardText = "未設定";
   let rewardLeft = "-";
   if (reward.data) {
-    const r = reward.data as { title: string; required_days: number; week_start: string };
-    const { count } = await sb
-      .from("recorded_days")
-      .select("date", { count: "exact", head: true })
-      .gte("date", r.week_start)
-      .lte("date", today);
-    rewardText = r.title;
-    rewardLeft = String(Math.max(0, r.required_days - (count ?? 0)));
+    const r = reward.data as { title: string; required_days: number; achieved_at: string | null };
+    const { data: done } = await sb.rpc("week_days_done", { p_today: today });
+    rewardText = r.achieved_at ? `${r.title}（今週は達成ずみ）` : r.title;
+    rewardLeft = String(Math.max(0, r.required_days - Number(done ?? 0)));
   }
 
   const ev = event.data as { date: string; title: string } | null;

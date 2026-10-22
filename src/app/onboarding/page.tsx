@@ -6,12 +6,13 @@ import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileProvider";
 import { AddToHomeGuide } from "@/components/AddToHomeGuide";
 import { ConsentForm } from "@/components/ConsentForm";
+import { NotificationToggle } from "@/components/NotificationSettings";
 import { TargetWeightInput, isValidTarget, numOrNull } from "@/components/ProfileFields";
 import { isStandalone } from "@/lib/pwa";
 import { today } from "@/lib/date";
 
-// 初回設定。通知の許可はフェーズ3で追加する
-const STEPS = ["welcome", "consent", "nickname", "body", "notes", "cycle", "home"] as const;
+// 初回設定
+const STEPS = ["welcome", "consent", "nickname", "body", "notes", "cycle", "home", "notify"] as const;
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -174,6 +175,17 @@ export default function OnboardingPage() {
           </>
         )}
 
+        {step === "notify" && (
+          <>
+            <h1 className="text-xl font-bold text-nasu-700">通知を受け取る？</h1>
+            <p className="text-sm text-nasu-600">
+              朝（体重とやること）・バイト終わり・夜（振り返り）にお知らせします。時刻はあとから設定で変えられます。
+            </p>
+            <NotificationToggle />
+            <p className="text-xs text-nasu-500">今はやめておいても、あとで設定からオンにできます。</p>
+          </>
+        )}
+
         {error && <p className="rounded-xl bg-sun-100 p-3 text-sm">{error}</p>}
       </div>
 
@@ -183,7 +195,7 @@ export default function OnboardingPage() {
             もどる
           </button>
         )}
-        {step === "home" ? (
+        {step === "notify" ? (
           <button className="btn-primary flex-[2]" onClick={finish} disabled={busy}>
             {busy ? "保存しています…" : "はじめる"}
           </button>

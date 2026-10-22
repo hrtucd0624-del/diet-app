@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 通知の秘密鍵（Supabase の Secrets にだけ入れる）
+.vapid-keys.json

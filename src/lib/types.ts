@@ -8,6 +8,10 @@ export type Profile = {
   cycle_length_days: number;
   consent_ai: boolean;
   consent_decided_at: string | null;
+  notify_morning: string;
+  notify_evening: string;
+  notify_work_end: boolean;
+  timezone: string;
   onboarded_at: string | null;
 };
 
@@ -37,3 +41,23 @@ export function needsRest(c: Pick<Condition, "fever_c" | "stomach" | "fatigue"> 
   if (!c) return false;
   return (c.fever_c ?? 0) >= 37.5 || c.stomach === "bad" || c.fatigue === "bad";
 }
+
+export type Reward = {
+  id: number;
+  week_start: string;
+  title: string;
+  required_days: number;
+  achieved_at: string | null;
+};
+
+export type Schedule = {
+  id: number;
+  starts_at: string;
+  ends_at: string;
+  kind: "work" | "pilates" | "other";
+  title: string | null;
+};
+
+export type EventItem = { id: number; date: string; title: string };
+
+export const SCHEDULE_KIND: Record<Schedule["kind"], string> = { work: "バイト", pilates: "ピラティス", other: "予定" };

@@ -7,6 +7,7 @@ import { useProfile } from "@/components/ProfileProvider";
 import { TargetWeightInput, isValidTarget, numOrNull } from "@/components/ProfileFields";
 import { today } from "@/lib/date";
 import { AiCoachSettings, PrivacyGuardSettings } from "@/components/PrivacySettings";
+import { NotificationSettings } from "@/components/NotificationSettings";
 
 const RECORD_TABLES = ["weights", "meals", "exercises", "conditions", "cycles", "todos", "chat_messages"] as const;
 
@@ -110,6 +111,7 @@ export default function SettingsPage() {
         {msg && <p className="text-center text-sm text-leaf-600">{msg}</p>}
       </form>
 
+      <NotificationSettings />
       <AiCoachSettings />
       <PrivacyGuardSettings />
 

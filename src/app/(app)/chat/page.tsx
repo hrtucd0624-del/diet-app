@@ -40,7 +40,9 @@ function Chat() {
   const { guard, modal } = useTextGuard();
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [text, setText] = useState(params.get("topic") === "before" ? "これ食べていい？ " : "");
+  const [text, setText] = useState(
+    params.get("topic") === "before" ? "これ食べていい？ " : params.get("topic") === "evening" ? "今日の振り返りをしたい" : "",
+  );
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
   const [photoNote, setPhotoNote] = useState<string | null>(null);
   const [thinking, setThinking] = useState(false);

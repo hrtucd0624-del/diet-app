@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const ITEMS = [
   { href: "/", label: "ホーム", icon: "🏠" },
   { href: "/record", label: "記録", icon: "✏️" },
+  { href: "/plan", label: "予定", icon: "📅" },
   { href: "/graph", label: "グラフ", icon: "📈" },
   { href: "/settings", label: "設定", icon: "⚙️" },
 ];

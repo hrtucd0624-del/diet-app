@@ -5,9 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileProvider";
 import { InstallBanner } from "@/components/InstallBanner";
-import { addDays, today } from "@/lib/date";
+import { addDays, daysBetween, formatMD, today, weekdayJa } from "@/lib/date";
+import { loadWeek, markAchievedIfDone, type WeekState } from "@/lib/week";
+import { currentNudge, type Nudge } from "@/lib/nudge";
 import { phraseOfDay } from "@/lib/phrases";
-import { needsRest, type Condition, type Todo } from "@/lib/types";
+import { needsRest, type Condition, type EventItem, type Schedule, type Todo } from "@/lib/types";
 import { useTextGuard } from "@/components/useTextGuard";
 import { callCoach } from "@/lib/coach";
 
@@ -40,19 +42,40 @@ export default function HomePage() {
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const { guard, modal } = useTextGuard();
+  const [week, setWeek] = useState<WeekState | null>(null);
+  const [nextEvent, setNextEvent] = useState<EventItem | null>(null);
+  const [nudge, setNudge] = useState<Nudge | null>(null);
 
   useEffect(() => {
     setComment(loadComment(date));
   }, [date]);
 
   const load = useCallback(async () => {
-    const [t, s, p, c, last] = await Promise.all([
+    const dayStart = new Date(`${date}T00:00`).toISOString();
+    const dayEnd = new Date(`${addDays(date, 1)}T00:00`).toISOString();
+    const [t, s, p, c, last, ev, sch, wt, w] = await Promise.all([
       supabase.from("todos").select("*").eq("date", date).order("id"),
       supabase.rpc("record_streak", { p_today: date }),
       supabase.rpc("cycle_phase", { p_today: date }),
       supabase.from("conditions").select("*").eq("date", date).maybeSingle(),
-      supabase.from("recorded_days").select("date").lt("date", date).order("date", { ascending: false }).limit(1),
+      supabase.from("streak_days").select("date").lt("date", date).order("date", { ascending: false }).limit(1),
+      supabase.from("events").select("*").gte("date", date).order("date").limit(1).maybeSingle(),
+      supabase.from("schedules").select("*").gte("ends_at", dayStart).lt("starts_at", dayEnd),
+      supabase.from("weights").select("id").eq("date", date).maybeSingle(),
+      loadWeek(supabase, date),
     ]);
+    if (await markAchievedIfDone(supabase, w)) w.reward = { ...w.reward!, achieved_at: new Date().toISOString() };
+    setWeek(w);
+    setNextEvent((ev.data as EventItem) ?? null);
+    setNudge(
+      currentNudge({
+        now: new Date(),
+        morning: profile.notify_morning,
+        evening: profile.notify_evening,
+        weightRecorded: !!wt.data,
+        schedules: (sch.data as Schedule[]) ?? [],
+      }),
+    );
     setTodos((t.data as Todo[]) ?? []);
     setStreak((s.data as number) ?? 0);
     setPhase((p.data as string) ?? null);
@@ -101,6 +124,12 @@ export default function HomePage() {
     load();
   }
 
+  async function applyYesterdayRestPass() {
+    const y = addDays(date, -1);
+    await supabase.from("rest_passes").insert({ date: y });
+    load();
+  }
+
   async function remove(todo: Todo) {
     setTodos((ts) => ts.filter((t) => t.id !== todo.id));
     await supabase.from("todos").delete().eq("id", todo.id);
@@ -111,6 +140,8 @@ export default function HomePage() {
   const hour = new Date().getHours();
   const greeting = welcomeBack ? "おかえり" : hour < 11 ? "おはよう" : hour < 18 ? "こんにちは" : "おつかれさま";
   const rest = needsRest(condition);
+  const restOffer = week?.restCandidates.includes(addDays(date, -1)) && !!lastRecorded;
+  const rewardLeft = week?.reward ? Math.max(0, week.reward.required_days - week.daysDone) : null;
 
   return (
     <div className="space-y-4 pt-6">
@@ -123,6 +154,27 @@ export default function HomePage() {
         </h1>
         {welcomeBack && <p className="mt-1 text-sm text-nasu-600">また来てくれてうれしい。今日からまた一緒にやろう。</p>}
       </header>
+
+      {nudge && (
+        <Link href={nudge.href} className="card flex items-center gap-3 bg-sun-100 ring-sun-100">
+          <span className="text-2xl" aria-hidden>
+            🔔
+          </span>
+          <span className="flex-1 text-sm leading-relaxed">{nudge.text}</span>
+          <span className="shrink-0 text-xs font-semibold text-nasu-600">{nudge.action} ›</span>
+        </Link>
+      )}
+
+      {restOffer && (
+        <section className="card space-y-2">
+          <p className="text-sm">
+            昨日（{formatMD(addDays(date, -1))}）は記録がなかったね。休むのも大事。<b>お休み券</b>を使えば、続いている日数はそのままだよ。
+          </p>
+          <button className="btn-soft w-full py-2 text-sm" onClick={applyYesterdayRestPass}>
+            ☕ 昨日をお休みの日にする
+          </button>
+        </section>
+      )}
 
       <section className="card bg-nasu-50">
         <p className="text-xs font-semibold text-nasu-500">{comment ? "コーチから今日の一言" : "今日のひとこと"}</p>
@@ -141,6 +193,36 @@ export default function HomePage() {
           <p className="text-xs text-nasu-500">いまの時期</p>
           <p className="mt-2 text-lg font-semibold text-nasu-700">{phase ?? "未登録"}</p>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Link href="/rewards" className="card text-center">
+          <p className="text-xs text-nasu-500">今週のご褒美</p>
+          {week?.reward ? (
+            <>
+              <p className="mt-1 truncate text-sm font-semibold text-nasu-700">🎁 {week.reward.title}</p>
+              <p className="mt-1 text-lg font-bold text-nasu-600">{week.reward.achieved_at ? "達成！🎉" : `あと ${rewardLeft} 日`}</p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm font-semibold text-nasu-600">決めよう ›</p>
+          )}
+        </Link>
+        <Link href="/plan" className="card text-center">
+          <p className="text-xs text-nasu-500">{nextEvent ? nextEvent.title : "楽しみな日"}</p>
+          {nextEvent ? (
+            <p className="mt-1 text-3xl font-bold text-nasu-600">
+              {daysBetween(date, nextEvent.date) === 0 ? "今日！" : daysBetween(date, nextEvent.date)}
+              {daysBetween(date, nextEvent.date) > 0 && <span className="ml-1 text-sm font-normal">日</span>}
+            </p>
+          ) : (
+            <p className="mt-2 text-sm font-semibold text-nasu-600">登録しよう ›</p>
+          )}
+          {nextEvent && (
+            <p className="text-xs text-nasu-400">
+              {formatMD(nextEvent.date)}({weekdayJa(nextEvent.date)})
+            </p>
+          )}
+        </Link>
       </div>
 
       <section className="card">

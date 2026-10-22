@@ -19,3 +19,23 @@ export function formatMD(iso: string): string {
   const [, m, d] = iso.split("-").map(Number);
   return `${m}/${d}`;
 }
+
+// 週は月曜はじまり
+export function mondayOf(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const day = new Date(y, m - 1, d).getDay();
+  return addDays(iso, -((day + 6) % 7));
+}
+
+export function daysBetween(fromIso: string, toIso: string): number {
+  const [a, b] = [fromIso, toIso].map((s) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return Date.UTC(y, m - 1, d);
+  });
+  return Math.round((b - a) / 86400000);
+}
+
+export function weekdayJa(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return "日月火水木金土"[new Date(y, m - 1, d).getDay()];
+}

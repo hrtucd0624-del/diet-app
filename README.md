@@ -3,7 +3,18 @@
 自分で決めたことを毎日続けるための、記録＋AIコーチのアプリ（PWA）。
 設計は [docs/design.md](docs/design.md)。すべて無料枠で動かします。
 
-## いまの状態：フェーズ2（AIコーチ）まで
+## いまの状態：フェーズ3（続ける仕組み）まで
+
+### フェーズ3
+- 連続記録に **お休み券**（週1回、記録しなかった日を「お休みの日」にできる。ホームにも案内が出る）
+- **今週のご褒美**（食べ物以外。条件は「今週◯日続ける」。週は月曜はじまり。達成でお祝い）
+- **予定**（バイト・ピラティスなど）と **イベントのカウントダウン**（場所は持たない）
+- **通知**（Web Push）：朝・バイト終わり・夜。通知文はテンプレートでAIは使わない
+  - pg_cron が5分ごとに Edge Function **`send-push`** を呼ぶ（これで Supabase の一時停止も防ぐ）
+  - iOS の通知は止まることがあるので、同じ内容をホームの 🔔 にも出す
+- まだ：古い写真を90日後に縮小する仕組み（設計書 9章）
+
+### フェーズ2（AIコーチ）
 
 ### フェーズ2
 - 同意画面（初回設定の中、フェーズ1から使っている人には一度だけ表示）
@@ -103,6 +114,32 @@ http://localhost:3000 を開く。
 > コーチの話し方を変えたい時は `docs/coach-system-prompt.md` を直して `node scripts/build-coach.mjs` を実行し、
 > できた `index.ts` を管理画面の `coach` に貼り直して Deploy する。
 
+### 6. 続ける仕組みと通知（フェーズ3）
+
+1. **SQL Editor** で [`supabase/migrations/0003_keep_going.sql`](supabase/migrations/0003_keep_going.sql) を実行
+2. **Edge Functions → Secrets** に3つ追加（通知用の鍵は `.vapid-keys.json` にある。GitHub には上がらない）
+   - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` = `.vapid-keys.json` の publicKey / privateKey
+   - `VAPID_SUBJECT` = `https://diet-app-v8vf.vercel.app`
+3. **Edge Functions → Deploy a new function → Via Editor**
+   - 名前：`send-push`、中身：[`supabase/functions/send-push/index.ts`](supabase/functions/send-push/index.ts)
+   - **「Verify JWT」をオフ**にして Deploy（cron から呼ぶため。中で合言葉とログインを自分で確かめている）
+4. **Edge Functions → coach** に [`supabase/functions/coach/index.ts`](supabase/functions/coach/index.ts) を貼り直して Deploy（ご褒美の計算を更新）
+5. **Integrations（または Database → Extensions）** で **pg_cron** と **pg_net** をオンにしてから、
+   **SQL Editor** で [`supabase/migrations/0004_push_cron.sql`](supabase/migrations/0004_push_cron.sql) を実行
+6. GitHub Desktop で **Push origin**
+
+---
+
+## iPhone での動作確認（フェーズ3）
+
+1. **ホーム画面のアプリ**から開く → **設定 → 通知 →「この端末で通知をオンにする」** → 許可
+2. 「テスト通知を送る」→ 数秒で通知が届く
+3. **ホーム →「今週のご褒美」** → ご褒美と日数を決める → 今週の ✓ が並ぶ
+4. **予定** → 楽しみなイベントを追加 → ホームに「あと◯日」
+5. **予定** → 今日のバイトを「10分後に終わる」時刻で追加 → 終わってから5〜10分で「お疲れさま」の通知
+6. 昨日の記録がない時 → ホームに「☕ 昨日をお休みの日にする」→ 押すと続いている日数がつながる
+7. 朝・夜の通知時刻を設定で変えて、その時刻のあと5分以内に届くか見る
+
 ---
 
 ## iPhone の Safari での動作確認（フェーズ2）
@@ -146,5 +183,4 @@ http://localhost:3000 を開く。
 
 ## 次のフェーズ
 
-- フェーズ3：連続記録・お休み券・ご褒美・予定・カウントダウン・通知
 - フェーズ4：パートナー
