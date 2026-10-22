@@ -58,11 +58,17 @@ http://localhost:3000 を開く。
 5. できた URL（例 `https://nasubi-coach.vercel.app`）を Supabase の
    **Authentication → URL Configuration → Site URL** に入れて保存
 
-### 4. 2人とも登録したら、新規登録を止める
+### 4. ユーザーを作る（新規登録はオフのまま）
 
-本人とパートナーがアプリの「はじめて登録」で登録し終わったら、Supabase の
-**Authentication → Sign In / Providers** で **Allow new users to sign up** をオフにする。
-これで URL を知っている他の人は登録できなくなる。
+アプリの「はじめて登録」は使わず、Supabase の管理画面でユーザーを作る。
+こうすると、URL を知っている他の人は登録できない。
+
+1. **Authentication → Sign In / Providers** の **Allow new users to sign up** はオフのまま
+2. **Authentication → Users → Add user → Create new user**
+3. メールとパスワードを入れ、**Auto Confirm User** にチェックして作成
+4. アプリの「ログイン」タブから、そのメールとパスワードでログイン
+
+パートナーのアカウントもフェーズ4で同じように作る。
 
 > パスワードを忘れた時：Supabase の **Authentication → Users** でそのユーザーを消して登録し直すと
 > 記録も消えてしまうので、消す前に Claude Code に相談してください。
@@ -72,7 +78,7 @@ http://localhost:3000 を開く。
 ## iPhone の Safari での動作確認（フェーズ1）
 
 1. iPhone の Safari で Vercel の URL を開く
-2. 「はじめて登録」でメールアドレスとパスワードを入れて登録
+2. 「ログイン」タブで、Supabase で作ったメールアドレスとパスワードを入れる
 3. 初回設定を進める
    - 目標体重に `45` を入れると「つぎへ」が押せないこと
 4. ホームで「今日やること」を3つ追加 → 4つ目の入力欄が消えること、チェックできること
