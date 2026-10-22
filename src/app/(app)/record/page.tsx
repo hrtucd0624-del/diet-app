@@ -99,6 +99,7 @@ function WeightForm({ onSaved }: FormProps) {
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const { count } = await supabase.from("weights").select("id", { count: "exact", head: true }).eq("date", date);
     const { error } = await supabase
       .from("weights")
       .upsert(
@@ -106,9 +107,10 @@ function WeightForm({ onSaved }: FormProps) {
         { onConflict: "owner_id,date" },
       );
     if (error) return setError(SAVE_ERROR);
+    const overwritten = (count ?? 0) > 0;
     setWeight("");
     setFat("");
-    onSaved();
+    onSaved(overwritten ? `${formatMD(date)} の体重を上書きしたよ` : "記録したよ");
     load();
   }
 
