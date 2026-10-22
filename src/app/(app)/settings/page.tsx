@@ -8,8 +8,22 @@ import { TargetWeightInput, isValidTarget, numOrNull } from "@/components/Profil
 import { today } from "@/lib/date";
 import { AiCoachSettings, PrivacyGuardSettings } from "@/components/PrivacySettings";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { PasswordSettings } from "@/components/PasswordSettings";
 
-const RECORD_TABLES = ["weights", "meals", "exercises", "conditions", "cycles", "todos", "chat_messages"] as const;
+// 本人の記録が入っているテーブル（書き出し・削除の対象）。テーブルを増やしたらここにも足す
+const RECORD_TABLES = [
+  "weights",
+  "meals",
+  "exercises",
+  "conditions",
+  "cycles",
+  "todos",
+  "chat_messages",
+  "schedules",
+  "events",
+  "rewards",
+  "rest_passes",
+] as const;
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -60,7 +74,7 @@ export default function SettingsPage() {
   }
 
   async function deleteRecords() {
-    if (!confirm("記録（体重・食事・運動・体調・生理・やること・コーチとのチャット）と写真をすべて消します。元に戻せません。よろしいですか？")) return;
+    if (!confirm("記録（体重・食事・運動・体調・生理・やること・コーチとのチャット・予定・イベント・ご褒美・お休み券）と写真をすべて消します。元に戻せません。よろしいですか？")) return;
     if (prompt("確認のため「けす」と入力してください") !== "けす") return;
     setBusy(true);
     // 食事の写真（{id}/）とチャットの写真（{id}/chat/）
@@ -125,6 +139,8 @@ export default function SettingsPage() {
         </button>
         <p className="text-xs text-nasu-500">アカウントそのものの削除は、のちのフェーズで追加します。</p>
       </section>
+
+      <PasswordSettings />
 
       <button className="btn-soft w-full" onClick={logout}>
         ログアウト
