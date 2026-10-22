@@ -174,10 +174,27 @@ async function dueMessages(admin: SupabaseClient, p: Profile) {
   return due;
 }
 
+// 通知の送り先は、ブラウザの公式の通知サービスだけ（それ以外のURLには送らない）
+const PUSH_HOSTS = [/\.push\.apple\.com$/, /^fcm\.googleapis\.com$/, /\.notify\.windows\.com$/, /\.push\.services\.mozilla\.com$/];
+
+function isPushEndpoint(endpoint: string): boolean {
+  try {
+    const u = new URL(endpoint);
+    return u.protocol === "https:" && PUSH_HOSTS.some((re) => re.test(u.hostname));
+  } catch {
+    return false;
+  }
+}
+
 async function sendToUser(admin: SupabaseClient, userId: string, message: Message): Promise<number> {
   const { data: subs } = await admin.from("push_subscriptions").select("*").eq("user_id", userId);
   let sent = 0;
   for (const s of (subs ?? []) as Sub[]) {
+    if (!isPushEndpoint(s.endpoint)) {
+      console.error("unknown push endpoint host, removed");
+      await admin.from("push_subscriptions").delete().eq("id", s.id);
+      continue;
+    }
     try {
       // web-push で暗号化と署名だけ作り、送信は fetch で行う
       const d = webpush.generateRequestDetails({ endpoint: s.endpoint, keys: s.keys }, JSON.stringify(message), {

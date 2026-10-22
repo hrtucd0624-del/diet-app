@@ -1,9 +1,10 @@
 // 送信前チェック（写真）。ブラウザの中で動く MediaPipe で、人の顔・人の体が写っていないか調べる。
-// 写真は外部に送らない（読み込むのはモデルのファイルだけ）。
+// 写真は外部に送らない（外から読み込むのは Google のモデルファイル＝データだけ）。
 
 import type { FaceDetector, ObjectDetector } from "@mediapipe/tasks-vision";
 
-const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
+// 実行ファイルはこのアプリ自身から配る（scripts/copy-mediapipe.mjs が public/ にコピーする）
+const WASM = "/mediapipe/wasm";
 const FACE_MODEL =
   "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
 const OBJECT_MODEL =

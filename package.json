@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "predev": "node scripts/copy-mediapipe.mjs",
+    "prebuild": "node scripts/copy-mediapipe.mjs",
+    "postinstall": "node scripts/copy-mediapipe.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35",

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # 通知の秘密鍵（Supabase の Secrets にだけ入れる）
 .vapid-keys.json
+
+# 写真チェックの実行ファイル（build 時に node_modules からコピーする）
+/public/mediapipe/

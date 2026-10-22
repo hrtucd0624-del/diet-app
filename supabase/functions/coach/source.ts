@@ -20,7 +20,7 @@ import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 const COACH_PROMPT: string = "__COACH_PROMPT__";
 
 const HISTORY_MESSAGES = 40; // 20往復
-const DAILY_REPLY_LIMIT = 80; // 無料枠を守るための1日の上限
+const DAILY_AI_LIMIT = 120; // 無料枠を守るための1日の上限（チャット・写真分析・提案の合計）
 const MAX_TODOS = 3;
 
 const CORS = {
@@ -71,6 +71,16 @@ Deno.serve(async (req) => {
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(body.today ?? "")) return json({ error: "bad_request" }, 400);
   body.tz_offset = Number.isFinite(body.tz_offset) ? body.tz_offset : 0;
+
+  if (!["reply", "analyze_meal", "suggest_todos"].includes(body.action)) return json({ error: "bad_request" }, 400);
+
+  // 1日の上限（24時間で数える）。数えてから AI を呼ぶ
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const { count } = await sb.from("ai_calls").select("id", { count: "exact", head: true }).gte("created_at", since);
+  if ((count ?? 0) >= DAILY_AI_LIMIT) {
+    return json({ error: "limit", message: "今日はたくさん話したね。続きはまた明日にしよう。記録はいつでもできるよ" }, 429);
+  }
+  await sb.from("ai_calls").insert({ action: body.action });
 
   try {
     if (body.action === "reply") return await reply(sb, profile, body);
@@ -339,16 +349,6 @@ function systemPrompt(profile: Record<string, unknown>, values: Record<string, s
 // ------------------------------------------------------------ reply
 
 async function reply(sb: SupabaseClient, profile: Record<string, unknown>, body: Req) {
-  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const { count } = await sb
-    .from("chat_messages")
-    .select("id", { count: "exact", head: true })
-    .eq("role", "coach")
-    .gte("created_at", since);
-  if ((count ?? 0) >= DAILY_REPLY_LIMIT) {
-    return json({ error: "limit", message: "今日はたくさん話したね。続きはまた明日にしよう。記録はいつでもできるよ" }, 429);
-  }
-
   const { data: rows } = await sb
     .from("chat_messages")
     .select("role, text, photo_path")

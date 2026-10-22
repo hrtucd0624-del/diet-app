@@ -36,5 +36,5 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   // 静的ファイル・PWA用ファイルは素通しする
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|sw.js).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icons/|mediapipe/|manifest.webmanifest|sw.js).*)"],
 };
