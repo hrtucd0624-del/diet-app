@@ -170,17 +170,18 @@ async function dueMessages(admin: SupabaseClient, p: Profile) {
   const { date, minutes } = localNow(p.timezone);
   const due: { kind: string; ref: string; message: Message }[] = [];
 
+  // 同じ日・同じ時刻には1回だけ。時刻を変えたら、その日でももう一度届く
   if (inWindow(minutes, toMinutes(p.notify_morning))) {
     due.push({
       kind: "morning",
-      ref: date,
+      ref: `${date}@${p.notify_morning.slice(0, 5)}`,
       message: { title: "なすびコーチ", body: "おはよう。体重と今日やることを決めよう", url: "/", tag: "morning" },
     });
   }
   if (inWindow(minutes, toMinutes(p.notify_evening))) {
     due.push({
       kind: "evening",
-      ref: date,
+      ref: `${date}@${p.notify_evening.slice(0, 5)}`,
       message: { title: "なすびコーチ", body: "今日の振り返りをしよう", url: "/chat?topic=evening", tag: "evening" },
     });
   }
