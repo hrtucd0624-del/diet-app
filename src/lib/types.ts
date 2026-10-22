@@ -7,6 +7,7 @@ export type Profile = {
   body_notes: string | null;
   cycle_length_days: number;
   consent_ai: boolean;
+  consent_decided_at: string | null;
   onboarded_at: string | null;
 };
 

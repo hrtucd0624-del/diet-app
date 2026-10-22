@@ -36,8 +36,12 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   }, [reload]);
 
   useEffect(() => {
-    if (profile && !profile.onboarded_at && pathname !== "/onboarding") {
-      router.replace("/onboarding");
+    if (!profile) return;
+    if (!profile.onboarded_at) {
+      if (pathname !== "/onboarding") router.replace("/onboarding");
+    } else if (!profile.consent_decided_at && pathname !== "/consent") {
+      // フェーズ1から使っている人にも、一度だけ同意画面を出す
+      router.replace("/consent");
     }
   }, [profile, pathname, router]);
 

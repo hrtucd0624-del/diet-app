@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileProvider";
 import { DateInput } from "@/components/DateInput";
+import { AiPhotoPicker, type PickedPhoto } from "@/components/AiPhotoPicker";
+import { useTextGuard } from "@/components/useTextGuard";
+import { callCoach } from "@/lib/coach";
 import { formatMD, today } from "@/lib/date";
 import { shrinkImage } from "@/lib/image";
 import type { Condition, Level } from "@/lib/types";
@@ -184,7 +187,52 @@ function WeightForm({ onSaved }: FormProps) {
 }
 
 // ---------------------------------------------------------------- 食事
-type MealRow = { id: number; eaten_at: string; note: string | null; photo_path: string | null; asked_before: boolean };
+type Analysis = {
+  carbs: string;
+  fat: string;
+  protein: string;
+  vegetables: string;
+  processed_food: boolean;
+  gut_friendly: string;
+  volume?: string;
+  comment: string;
+};
+type MealRow = {
+  id: number;
+  eaten_at: string;
+  note: string | null;
+  photo_path: string | null;
+  photo_ai_ok: boolean;
+  asked_before: boolean;
+  ai_analysis: Analysis | null;
+};
+
+const LMH: Record<string, string> = { low: "少なめ", mid: "ふつう", high: "多め" };
+const VOLUME: Record<string, string> = { light: "軽め", normal: "ふつう", hearty: "しっかり" };
+
+function AnalysisChips({ a }: { a: Analysis }) {
+  const chips = [
+    a.volume && `量：${VOLUME[a.volume] ?? a.volume}`,
+    `糖質 ${LMH[a.carbs] ?? "-"}`,
+    `脂質 ${LMH[a.fat] ?? "-"}`,
+    `たんぱく質 ${LMH[a.protein] ?? "-"}`,
+    `野菜 ${LMH[a.vegetables] ?? "-"}`,
+    a.processed_food && "加工品あり",
+    `腸にうれしい要素 ${a.gut_friendly === "more" ? "多め" : "少なめ"}`,
+  ].filter(Boolean) as string[];
+  return (
+    <div className="mt-1 space-y-1">
+      <div className="flex flex-wrap gap-1">
+        {chips.map((c) => (
+          <span key={c} className="rounded bg-nasu-50 px-1.5 py-0.5 text-[11px] text-nasu-600">
+            {c}
+          </span>
+        ))}
+      </div>
+      {a.comment && <p className="text-xs text-nasu-600">💬 {a.comment}</p>}
+    </div>
+  );
+}
 
 function nowTime(): string {
   const d = new Date();
@@ -194,13 +242,15 @@ function nowTime(): string {
 function MealForm({ onSaved }: FormProps) {
   const supabase = createClient();
   const { profile } = useProfile();
+  const { guard, modal } = useTextGuard();
   const [date, setDate] = useState(today());
   const [time, setTime] = useState(nowTime());
   const [note, setNote] = useState("");
   const [askedBefore, setAskedBefore] = useState(false);
-  const [photo, setPhoto] = useState<Blob | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<PickedPhoto | null>(null);
+  const [analyze, setAnalyze] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<(MealRow & { url?: string })[]>([]);
 
@@ -222,31 +272,48 @@ function MealForm({ onSaved }: FormProps) {
     load();
   }, [load]);
 
-  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+  // AIコーチを使わない時は、縮小・EXIF削除だけ
+  async function pickPlain(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
     setError(null);
     try {
-      // 端末の中で縮小・EXIF削除してから扱う
       const blob = await shrinkImage(file);
-      setPhoto(blob);
-      setPreview(URL.createObjectURL(blob));
+      setPhoto({ blob, url: URL.createObjectURL(blob), aiOk: false, reasons: [] });
     } catch {
       setError("写真を読み込めませんでした。別の写真でためしてね。");
     }
   }
 
+  async function runAnalysis(mealId: number) {
+    setAnalyzing(mealId);
+    const res = await callCoach<{ analysis: Analysis }>("analyze_meal", { meal_id: mealId });
+    setAnalyzing(null);
+    if (!res.ok) setError(res.message);
+    load();
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!note.trim() && !photo) return setError("写真かメモのどちらかを入れてね。");
-    setBusy(true);
     setError(null);
+
+    // メモはコーチにも渡るので、送信前チェックを通す
+    let safeNote = note.trim();
+    if (profile.consent_ai && safeNote) {
+      const checked = await guard(safeNote);
+      if (checked === null) return;
+      safeNote = checked;
+    }
+
+    setBusy(true);
     let photo_path: string | null = null;
     if (photo) {
       const path = `${profile.id}/${crypto.randomUUID()}.jpg`;
       const { error: upErr } = await supabase.storage
         .from("meal-photos")
-        .upload(path, photo, { contentType: "image/jpeg" });
+        .upload(path, photo.blob, { contentType: "image/jpeg" });
       if (upErr) {
         setBusy(false);
         return setError(SAVE_ERROR);
@@ -254,18 +321,28 @@ function MealForm({ onSaved }: FormProps) {
       photo_path = path;
     }
     const eaten_at = new Date(`${date}T${time}`).toISOString();
-    const { error } = await supabase
+    const { data: saved, error } = await supabase
       .from("meals")
-      .insert({ date, eaten_at, note: note.trim() || null, photo_path, asked_before: askedBefore });
+      .insert({
+        date,
+        eaten_at,
+        note: safeNote || null,
+        photo_path,
+        photo_ai_ok: !!photo?.aiOk,
+        asked_before: askedBefore,
+      })
+      .select("id")
+      .single();
     setBusy(false);
     if (error) return setError(SAVE_ERROR);
+    const shouldAnalyze = profile.consent_ai && !!photo?.aiOk && analyze;
     setNote("");
     setPhoto(null);
-    setPreview(null);
     setAskedBefore(false);
     setTime(nowTime());
     onSaved();
-    load();
+    await load();
+    if (shouldAnalyze) runAnalysis(saved.id);
   }
 
   async function remove(m: MealRow) {
@@ -290,24 +367,44 @@ function MealForm({ onSaved }: FormProps) {
         </div>
         <div>
           <label className="label">写真（なくてもOK）</label>
-          {preview ? (
-            <div className="relative">
-              <img src={preview} alt="選んだ写真" className="w-full rounded-xl" />
-              <button
-                type="button"
-                className="absolute right-2 top-2 rounded-full bg-white/90 px-3 py-1 text-sm"
-                onClick={() => {
-                  setPhoto(null);
-                  setPreview(null);
-                }}
-              >
-                やめる
-              </button>
+          {photo ? (
+            <div className="space-y-2">
+              <div className="relative">
+                <img src={photo.url} alt="選んだ写真" className="w-full rounded-xl" />
+                <button
+                  type="button"
+                  className="absolute right-2 top-2 rounded-full bg-white/90 px-3 py-1 text-sm"
+                  onClick={() => setPhoto(null)}
+                >
+                  やめる
+                </button>
+              </div>
+              {profile.consent_ai &&
+                (photo.aiOk ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5 accent-nasu-500"
+                      checked={analyze}
+                      onChange={(e) => setAnalyze(e.target.checked)}
+                    />
+                    コーチに写真を分析してもらう
+                  </label>
+                ) : (
+                  <p className="rounded-xl bg-sun-100 p-2 text-xs">
+                    {photo.reasons.join("・")}が写っているみたいなので、この写真はAIには送りません。記録として保存はできます。
+                    分析してほしい時は「やめる」を押して、料理だけを切り抜き直してね。
+                  </p>
+                ))}
             </div>
+          ) : profile.consent_ai ? (
+            <AiPhotoPicker onPicked={setPhoto} className="btn-soft w-full cursor-pointer">
+              📷 写真を選ぶ・撮る
+            </AiPhotoPicker>
           ) : (
             <label className="btn-soft w-full cursor-pointer">
               📷 写真を選ぶ・撮る
-              <input type="file" accept="image/*" className="hidden" onChange={pick} />
+              <input type="file" accept="image/*" className="hidden" onChange={pickPlain} />
             </label>
           )}
           <p className="mt-1 text-xs text-nasu-500">写真は小さくして、位置情報などを消してから保存します。</p>
@@ -349,6 +446,18 @@ function MealForm({ onSaved }: FormProps) {
                     {m.asked_before && <span className="ml-2 rounded bg-leaf-100 px-1.5 text-xs text-leaf-600">相談できた</span>}
                   </p>
                   <p className="whitespace-pre-wrap">{m.note}</p>
+                  {m.ai_analysis ? (
+                    <AnalysisChips a={m.ai_analysis} />
+                  ) : analyzing === m.id ? (
+                    <p className="mt-1 text-xs text-nasu-500">写真を分析中…</p>
+                  ) : (
+                    profile.consent_ai &&
+                    m.photo_ai_ok && (
+                      <button className="mt-1 text-xs text-nasu-600 underline" onClick={() => runAnalysis(m.id)}>
+                        写真を分析してもらう
+                      </button>
+                    )
+                  )}
                 </div>
                 <button aria-label="削除" className="self-start px-2 text-nasu-300" onClick={() => remove(m)}>
                   ✕
@@ -358,6 +467,7 @@ function MealForm({ onSaved }: FormProps) {
           </ul>
         </section>
       )}
+      {modal}
     </div>
   );
 }
@@ -493,6 +603,8 @@ function LevelPicker({ value, onChange }: { value: Level | null; onChange: (v: L
 
 function ConditionForm({ onSaved }: FormProps) {
   const supabase = createClient();
+  const { profile } = useProfile();
+  const { guard, modal } = useTextGuard();
   const [date, setDate] = useState(today());
   const [fever, setFever] = useState("");
   const [stomach, setStomach] = useState<Level | null>(null);
@@ -516,10 +628,18 @@ function ConditionForm({ onSaved }: FormProps) {
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // メモはコーチにも渡るので、送信前チェックを通す
+    let safeNote = note.trim();
+    if (profile.consent_ai && safeNote) {
+      const checked = await guard(safeNote);
+      if (checked === null) return;
+      safeNote = checked;
+      setNote(checked);
+    }
     const { error } = await supabase
       .from("conditions")
       .upsert(
-        { date, fever_c: fever ? Number(fever) : null, stomach, fatigue, note: note.trim() || null },
+        { date, fever_c: fever ? Number(fever) : null, stomach, fatigue, note: safeNote || null },
         { onConflict: "owner_id,date" },
       );
     if (error) return setError(SAVE_ERROR);
@@ -560,6 +680,7 @@ function ConditionForm({ onSaved }: FormProps) {
       <ErrorNote error={error} />
       <button className="btn-primary w-full">記録する</button>
       <p className="text-xs text-nasu-500">熱がある日や体調がよくない日は、ホームの「今日やること」が「休む」になります。</p>
+      {modal}
     </form>
   );
 }

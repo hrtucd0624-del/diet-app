@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileProvider";
 import { AddToHomeGuide } from "@/components/AddToHomeGuide";
+import { ConsentForm } from "@/components/ConsentForm";
 import { TargetWeightInput, isValidTarget, numOrNull } from "@/components/ProfileFields";
 import { isStandalone } from "@/lib/pwa";
 import { today } from "@/lib/date";
 
-// フェーズ1の初回設定。同意画面はフェーズ2、通知の許可はフェーズ3で追加する
-const STEPS = ["welcome", "nickname", "body", "notes", "cycle", "home"] as const;
+// 初回設定。通知の許可はフェーズ3で追加する
+const STEPS = ["welcome", "consent", "nickname", "body", "notes", "cycle", "home"] as const;
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -79,6 +80,8 @@ export default function OnboardingPage() {
             </p>
           </>
         )}
+
+        {step === "consent" && <ConsentForm onDone={next} />}
 
         {step === "nickname" && (
           <>
@@ -174,7 +177,7 @@ export default function OnboardingPage() {
         {error && <p className="rounded-xl bg-sun-100 p-3 text-sm">{error}</p>}
       </div>
 
-      <div className="mt-8 flex gap-3">
+      <div className={`mt-8 flex gap-3 ${step === "consent" ? "hidden" : ""}`}>
         {i > 0 && (
           <button className="btn-soft flex-1" onClick={back} disabled={busy}>
             もどる

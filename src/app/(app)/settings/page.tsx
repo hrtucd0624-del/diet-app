@@ -6,8 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileProvider";
 import { TargetWeightInput, isValidTarget, numOrNull } from "@/components/ProfileFields";
 import { today } from "@/lib/date";
+import { AiCoachSettings, PrivacyGuardSettings } from "@/components/PrivacySettings";
 
-const RECORD_TABLES = ["weights", "meals", "exercises", "conditions", "cycles", "todos"] as const;
+const RECORD_TABLES = ["weights", "meals", "exercises", "conditions", "cycles", "todos", "chat_messages"] as const;
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -58,12 +59,14 @@ export default function SettingsPage() {
   }
 
   async function deleteRecords() {
-    if (!confirm("記録（体重・食事・運動・体調・生理・やること）と食事の写真をすべて消します。元に戻せません。よろしいですか？")) return;
+    if (!confirm("記録（体重・食事・運動・体調・生理・やること・コーチとのチャット）と写真をすべて消します。元に戻せません。よろしいですか？")) return;
     if (prompt("確認のため「けす」と入力してください") !== "けす") return;
     setBusy(true);
-    const { data: files } = await supabase.storage.from("meal-photos").list(profile.id, { limit: 1000 });
-    if (files?.length) {
-      await supabase.storage.from("meal-photos").remove(files.map((f) => `${profile.id}/${f.name}`));
+    // 食事の写真（{id}/）とチャットの写真（{id}/chat/）
+    for (const folder of [profile.id, `${profile.id}/chat`]) {
+      const { data: files } = await supabase.storage.from("meal-photos").list(folder, { limit: 1000 });
+      const paths = (files ?? []).filter((f) => f.id).map((f) => `${folder}/${f.name}`);
+      if (paths.length) await supabase.storage.from("meal-photos").remove(paths);
     }
     for (const t of RECORD_TABLES) {
       await supabase.from(t).delete().eq("owner_id", profile.id);
@@ -106,6 +109,9 @@ export default function SettingsPage() {
         </button>
         {msg && <p className="text-center text-sm text-leaf-600">{msg}</p>}
       </form>
+
+      <AiCoachSettings />
+      <PrivacyGuardSettings />
 
       <section className="card space-y-3">
         <h2 className="font-bold text-nasu-700">データ</h2>
